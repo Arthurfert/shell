@@ -1,0 +1,2 @@
+# shell
+My rust shell
