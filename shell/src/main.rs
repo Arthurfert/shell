@@ -10,7 +10,9 @@ fn main() {
         let mut input = String::new();
         stdin().read_line(&mut input).unwrap();
 
-        let command = input.trim();
+        let mut parts = input.trim().split_whitespace();
+        let command = parts.next().unwrap_or("");
+        let args: Vec<&str> = parts.collect();
 
         // Quitter si l'utilisateur tape "exit"
         if command == "exit" {
@@ -22,9 +24,9 @@ fn main() {
             continue;
         }
 
-        // Exécuter la commande via cmd.exe sur Windows
-        let output = Command::new("cmd")
-            .args(["/C", command])
+        // Exécuter la commande avec ses arguments
+        let output = Command::new(command)
+            .args(&args)
             .output();
 
         match output {
