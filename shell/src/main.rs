@@ -36,6 +36,14 @@ fn main() {
 
             "exit" => return,
 
+            "clear" => {
+                // \x1B[2J = efface l'écran visible
+                // \x1B[3J = efface le buffer de défilement (scrollback)
+                // \x1B[H  = remet le curseur en haut à gauche
+                print!("\x1B[2J\x1B[3J\x1B[H");
+                io::stdout().flush().unwrap();
+            },
+
             // Exécuter la commande avec ses arguments
             _ => {
                 let output = Command::new(command)
