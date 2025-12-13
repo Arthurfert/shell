@@ -1,25 +1,25 @@
 use std::env;
 use std::io::{self, Write, stdin};
 use std::path::Path;
-use std::process::{Child, Command};
-use std::sync::{Arc, Mutex};
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 fn main() {
-    // Stocker le processus enfant en cours pour pouvoir le tuer avec Ctrl+C
-    let child: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
-    let child_clone = Arc::clone(&child);
+    // Flag pour indiquer si Ctrl+C a été pressé
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let interrupted_clone = Arc::clone(&interrupted);
 
     // Configurer le handler Ctrl+C
     ctrlc::set_handler(move || {
-        let mut child_guard = child_clone.lock().unwrap();
-        if let Some(ref mut process) = *child_guard {
-            // Tuer le processus enfant en cours
-            let _ = process.kill();
-            println!("\nProcessus interrompu.");
-        }
+        interrupted_clone.store(true, Ordering::SeqCst);
+        println!("\nProcessus interrompu.");
     }).expect("Erreur lors de la configuration du handler Ctrl+C");
 
     loop {
+        // Réinitialiser le flag
+        interrupted.store(false, Ordering::SeqCst);
+
         // Afficher le prompt
         print!("> ");
         io::stdout().flush().unwrap();
@@ -64,21 +64,10 @@ fn main() {
             // Exécuter la commande avec ses arguments
             _ => {
                 match Command::new(command).args(&args).spawn() {
-                    Ok(process) => {
-                        // Stocker le processus pour que Ctrl+C puisse le tuer
-                        {
-                            let mut child_guard = child.lock().unwrap();
-                            *child_guard = Some(process);
-                        }
-
+                    Ok(mut child) => {
                         // Attendre que le processus se termine
-                        {
-                            let mut child_guard = child.lock().unwrap();
-                            if let Some(ref mut p) = *child_guard {
-                                let _ = p.wait();
-                            }
-                            *child_guard = None;
-                        }
+                        // Ctrl+C automatiquement envoyé au processus enfant
+                        let _ = child.wait();
                     }
                     Err(e) => {
                         eprintln!("Erreur: {}", e);
