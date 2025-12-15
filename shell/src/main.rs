@@ -61,6 +61,33 @@ fn main() {
                 io::stdout().flush().unwrap();
             },
 
+            "ls" => {
+                // Lister les fichiers du répertoire courant
+                let path = args.first().map_or(".", |x| *x);
+                match std::fs::read_dir(path) {
+                    Ok(entries) => {
+                        for entry in entries {
+                            if let Ok(entry) = entry {
+                                let file_name = entry.file_name();
+                                let name = file_name.to_string_lossy();
+                                
+                                // Ajouter / à la fin si c'est un dossier
+                                if let Ok(file_type) = entry.file_type() {
+                                    if file_type.is_dir() {
+                                        println!("{}/", name);
+                                    } else {
+                                        println!("{}", name);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Erreur: {}", e);
+                    }
+                }
+            },
+
             // Exécuter la commande avec ses arguments
             _ => {
                 match Command::new(command).args(&args).spawn() {
