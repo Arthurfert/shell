@@ -6,6 +6,44 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use chrono::{DateTime, Local};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+/// Retourne le répertoire home de l'utilisateur
+fn get_home_dir() -> String {
+    if cfg!(target_os = "windows") {
+        env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string())
+    } else {
+        env::var("HOME").unwrap_or_else(|_| ".".to_string())
+    }
+}
+
+/// Retourne le nom de l'utilisateur
+fn get_username() -> String {
+    if cfg!(target_os = "windows") {
+        env::var("USERNAME").unwrap_or_else(|_| "user".to_string())
+    } else {
+        env::var("USER").unwrap_or_else(|_| "user".to_string())
+    }
+}
+
+/// Vérifie si un fichier est exécutable
+#[cfg(windows)]
+fn is_executable(name: &str, _metadata: &std::fs::Metadata) -> bool {
+    let name_lower = name.to_lowercase();
+    name_lower.ends_with(".exe") 
+        || name_lower.ends_with(".bat") 
+        || name_lower.ends_with(".cmd") 
+        || name_lower.ends_with(".ps1")
+        || name_lower.ends_with(".com")
+}
+
+#[cfg(unix)]
+fn is_executable(_name: &str, metadata: &std::fs::Metadata) -> bool {
+    // Sur Unix, vérifier le bit d'exécution
+    metadata.permissions().mode() & 0o111 != 0
+}
+
 fn main() {
     // Flag pour indiquer si Ctrl+C a été pressé
     let interrupted = Arc::new(AtomicBool::new(false));
@@ -43,7 +81,7 @@ fn main() {
             "cd" => {
                 // Par défaut aller au répertoire home si aucun argument
                 let new_dir = args.first().map_or(
-                    env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string()),
+                    get_home_dir(),
                     |x| x.to_string()
                 );
                 let root = Path::new(&new_dir);
@@ -115,17 +153,12 @@ fn main() {
                                     let is_dir = metadata.is_dir();
                                     let is_readonly = metadata.permissions().readonly();
                                     
-                                    // Sur Windows, l'exécutabilité est basée sur l'extension
-                                    let name_lower = name.to_lowercase();
-                                    let is_executable = name_lower.ends_with(".exe") 
-                                        || name_lower.ends_with(".bat") 
-                                        || name_lower.ends_with(".cmd") 
-                                        || name_lower.ends_with(".ps1")
-                                        || name_lower.ends_with(".com");
+                                    // Vérifier si le fichier est exécutable
+                                    let is_exec = is_executable(&name, &metadata);
                                     
                                     let perms = if is_dir {
                                         if is_readonly { "dr-xr-xr-x" } else { "drwxr-xr-x" }
-                                    } else if is_executable {
+                                    } else if is_exec {
                                         if is_readonly { "-r-xr-xr-x" } else { "-rwxr-xr-x" }
                                     } else {
                                         if is_readonly { "-r--r--r--" } else { "-rw-r--r--" }
@@ -134,8 +167,8 @@ fn main() {
                                     // Nombre de liens (simulé: 1 pour fichiers, 2+ pour dossiers)
                                     let links = if is_dir { 2 } else { 1 };
 
-                                    // Propriétaire et groupe (Windows n'a pas vraiment ça)
-                                    let owner = env::var("USERNAME").unwrap_or_else(|_| "user".to_string());
+                                    // Propriétaire
+                                    let owner = get_username();
 
                                     let size = metadata.len();
                                     
@@ -147,16 +180,18 @@ fn main() {
                                         "?".to_string()
                                     };
 
-                                    // Couleurs ANSI (insensible à la casse pour Windows)
-                                    let name_lower = name.to_lowercase();
+                                    // Couleurs ANSI
                                     let (color_start, color_end) = if is_dir {
                                         ("\x1B[1;34m", "\x1B[0m")  // Bleu gras pour dossiers
-                                    } else if name_lower.ends_with(".exe") || name_lower.ends_with(".bat") || name_lower.ends_with(".cmd") || name_lower.ends_with(".ps1") {
+                                    } else if is_exec {
                                         ("\x1B[1;32m", "\x1B[0m")  // Vert gras pour exécutables
-                                    } else if name_lower.ends_with(".zip") || name_lower.ends_with(".tar") || name_lower.ends_with(".gz") || name_lower.ends_with(".7z") || name_lower.ends_with(".rar") {
-                                        ("\x1B[1;31m", "\x1B[0m")  // Rouge gras pour archives
                                     } else {
-                                        ("", "")  // Pas de couleur
+                                        let name_lower = name.to_lowercase();
+                                        if name_lower.ends_with(".zip") || name_lower.ends_with(".tar") || name_lower.ends_with(".gz") || name_lower.ends_with(".7z") || name_lower.ends_with(".rar") {
+                                            ("\x1B[1;31m", "\x1B[0m")  // Rouge gras pour archives
+                                        } else {
+                                            ("", "")  // Pas de couleur
+                                        }
                                     };
 
                                     println!("{} {:>2} {:<8} {:>8} {} {}{}{}",
@@ -166,10 +201,9 @@ fn main() {
                             } else {
                                 // Affichage simple avec couleurs
                                 if let Ok(metadata) = entry.metadata() {
-                                    let name_lower = name.to_lowercase();
                                     if metadata.is_dir() {
                                         println!("\x1B[1;34m{}\x1B[0m", name);  // Bleu pour dossiers
-                                    } else if name_lower.ends_with(".exe") || name_lower.ends_with(".bat") || name_lower.ends_with(".cmd") || name_lower.ends_with(".ps1") {
+                                    } else if is_executable(&name, &metadata) {
                                         println!("\x1B[1;32m{}\x1B[0m", name);  // Vert pour exécutables
                                     } else {
                                         println!("{}", name);

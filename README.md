@@ -1,6 +1,8 @@
 # Shell
 
-Un shell minimaliste écrit en Rust, créé à des fins d'apprentissage, utilisant les commandes linux  un environnement windows.
+Un shell minimaliste écrit en Rust, créé à des fins d'apprentissage, utilisant les commandes linux.
+
+**Compatible Windows & Linux**
 
 ## Fonctionnalités
 
