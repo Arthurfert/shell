@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use chrono::{DateTime, Local};
 
 fn main() {
     // Flag pour indiquer si Ctrl+C a été pressé
@@ -62,19 +63,114 @@ fn main() {
             },
 
             "ls" => {
-                // Lister les fichiers du répertoire courant
-                let path = args.first().map_or(".", |x| *x);
+                // Parser les options et le chemin
+                let mut show_details = false;
+                let mut show_hidden = false;
+                let mut path = ".";
+
+                for arg in &args {
+                    if arg.starts_with('-') {
+                        if arg.contains('l') { show_details = true; }
+                        if arg.contains('a') { show_hidden = true; }
+                    } else {
+                        path = arg;
+                    }
+                }
+
                 match std::fs::read_dir(path) {
                     Ok(entries) => {
-                        for entry in entries {
-                            if let Ok(entry) = entry {
-                                let file_name = entry.file_name();
-                                let name = file_name.to_string_lossy();
-                                
-                                // Ajouter / à la fin si c'est un dossier
-                                if let Ok(file_type) = entry.file_type() {
-                                    if file_type.is_dir() {
-                                        println!("{}/", name);
+                        // Collecter les entrées pour calculer le total et aligner les colonnes
+                        let mut file_entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+                        
+                        // Trier par nom
+                        file_entries.sort_by(|a, b| {
+                            a.file_name().to_string_lossy().to_lowercase()
+                                .cmp(&b.file_name().to_string_lossy().to_lowercase())
+                        });
+
+                        // Afficher l'en-tête si mode détaillé
+                        if show_details {
+                            // Calculer le total (en blocs de 512 octets, comme Linux)
+                            let total: u64 = file_entries.iter()
+                                .filter_map(|e| e.metadata().ok())
+                                .map(|m| (m.len() + 511) / 512)
+                                .sum();
+                            println!("total {}", total);
+                            println!("\x1B[4mPermissions  Lnk Owner        Size Modified     Name\x1B[0m");
+                        }
+
+                        for entry in &file_entries {
+                            let file_name = entry.file_name();
+                            let name = file_name.to_string_lossy();
+
+                            // Ignorer les fichiers cachés (commençant par .) sauf si -a
+                            if !show_hidden && name.starts_with('.') {
+                                continue;
+                            }
+
+                            if show_details {
+                                // Affichage détaillé style Linux
+                                if let Ok(metadata) = entry.metadata() {
+                                    // Permissions style Linux
+                                    let is_dir = metadata.is_dir();
+                                    let is_readonly = metadata.permissions().readonly();
+                                    
+                                    // Sur Windows, l'exécutabilité est basée sur l'extension
+                                    let name_lower = name.to_lowercase();
+                                    let is_executable = name_lower.ends_with(".exe") 
+                                        || name_lower.ends_with(".bat") 
+                                        || name_lower.ends_with(".cmd") 
+                                        || name_lower.ends_with(".ps1")
+                                        || name_lower.ends_with(".com");
+                                    
+                                    let perms = if is_dir {
+                                        if is_readonly { "dr-xr-xr-x" } else { "drwxr-xr-x" }
+                                    } else if is_executable {
+                                        if is_readonly { "-r-xr-xr-x" } else { "-rwxr-xr-x" }
+                                    } else {
+                                        if is_readonly { "-r--r--r--" } else { "-rw-r--r--" }
+                                    };
+
+                                    // Nombre de liens (simulé: 1 pour fichiers, 2+ pour dossiers)
+                                    let links = if is_dir { 2 } else { 1 };
+
+                                    // Propriétaire et groupe (Windows n'a pas vraiment ça)
+                                    let owner = env::var("USERNAME").unwrap_or_else(|_| "user".to_string());
+
+                                    let size = metadata.len();
+                                    
+                                    // Date de modification
+                                    let modified = if let Ok(time) = metadata.modified() {
+                                        let datetime: DateTime<Local> = time.into();
+                                        datetime.format("%b %e %H:%M").to_string()
+                                    } else {
+                                        "?".to_string()
+                                    };
+
+                                    // Couleurs ANSI (insensible à la casse pour Windows)
+                                    let name_lower = name.to_lowercase();
+                                    let (color_start, color_end) = if is_dir {
+                                        ("\x1B[1;34m", "\x1B[0m")  // Bleu gras pour dossiers
+                                    } else if name_lower.ends_with(".exe") || name_lower.ends_with(".bat") || name_lower.ends_with(".cmd") || name_lower.ends_with(".ps1") {
+                                        ("\x1B[1;32m", "\x1B[0m")  // Vert gras pour exécutables
+                                    } else if name_lower.ends_with(".zip") || name_lower.ends_with(".tar") || name_lower.ends_with(".gz") || name_lower.ends_with(".7z") || name_lower.ends_with(".rar") {
+                                        ("\x1B[1;31m", "\x1B[0m")  // Rouge gras pour archives
+                                    } else {
+                                        ("", "")  // Pas de couleur
+                                    };
+
+                                    println!("{} {:>2} {:<8} {:>8} {} {}{}{}",
+                                        perms, links, owner, size, modified,
+                                        color_start, name, color_end);
+                                }
+                            } else {
+                                // Affichage simple avec couleurs
+                                if let Ok(metadata) = entry.metadata() {
+                                    let name_lower = name.to_lowercase();
+                                    if metadata.is_dir() {
+                                        println!("\x1B[1;34m{}\x1B[0m", name);  // Bleu pour dossiers
+                                    } else if name_lower.ends_with(".exe") || name_lower.ends_with(".bat") || name_lower.ends_with(".cmd") || name_lower.ends_with(".ps1") {
+                                        println!("\x1B[1;32m{}\x1B[0m", name);  // Vert pour exécutables
                                     } else {
                                         println!("{}", name);
                                     }

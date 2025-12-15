@@ -1,6 +1,6 @@
 # Shell
 
-Un shell minimaliste écrit en Rust, créé à des fins d'apprentissage, pour un environnement windows.
+Un shell minimaliste écrit en Rust, créé à des fins d'apprentissage, utilisant les commandes linux  un environnement windows.
 
 ## Fonctionnalités
 
@@ -9,6 +9,7 @@ Un shell minimaliste écrit en Rust, créé à des fins d'apprentissage, pour un
 - **Interruption de processus** avec `ctrl c`
 - **Commandes intégrées (built-in)** :
   - `cd [chemin]` - Change de répertoire (répertoire home par défaut)
+  - `ls [chemin]` - Affiche le contenu (`ls -la` pour les détails)
   - `clear` - Efface les commandes précédentes
   - `exit` - Quitte le shell
 
