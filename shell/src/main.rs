@@ -78,7 +78,9 @@ fn main() {
         } else {
             cwd_display
         };
-        print!("{} > ", prompt_path);
+        // Coloriser le prompt (gras cyan)
+        let prompt_colored = format!("\x1B[1;36m{}\x1B[0m", prompt_path);
+        print!("{} > ", prompt_colored);
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
@@ -152,7 +154,9 @@ fn main() {
                                 .map(|m| (m.len() + 511) / 512)
                                 .sum();
                             println!("total {}", total);
-                            println!("\x1B[4mPermissions  Lnk Owner        Size Modified     Name\x1B[0m");
+                            // Header aligned with data columns: perms(10) links(>3) owner(<10) size(>10) modified(12) name
+                            println!("\x1B[4m{:<10} {:>3} {:<10} {:>10} {:<12} {}\x1B[0m",
+                                "Permissions", "Lnk", "Owner", "Size", "Modified", "Name");
                         }
 
                         for entry in &file_entries {
@@ -212,15 +216,71 @@ fn main() {
                                         }
                                     };
 
-                                    println!("{} {:>2} {:<8} {:>8} {} {}{}{}",
+                                    // Suffixe '/' pour les dossiers, coloré différemment
+                                    let suffix_plain = if is_dir { "/" } else { "" };
+                                    let suffix_colored = if is_dir { String::from("\x1B[36m/\x1B[0m") } else { String::new() };
+
+                                    // Construire le nom plain et appliquer tronquage si nécessaire
+                                    let plain_name = format!("{}{}", name, suffix_plain);
+                                    let max_width: usize = 40;
+                                    let display_plain = if plain_name.chars().count() > max_width {
+                                        // garder l'extension si présente
+                                        if let Some(pos) = name.rfind('.') {
+                                            let ext = &name[pos..];
+                                            if ext.chars().count() + 4 >= max_width {
+                                                // garder début + ...
+                                                let head_len = max_width - 5;
+                                                format!("{}(...)", plain_name.chars().take(head_len).collect::<String>())
+                                            } else {
+                                                let head_len = max_width - ext.chars().count() - 5; // 5 for (...)
+                                                let head = name.chars().take(head_len).collect::<String>();
+                                                format!("{}...{}{}", head, ext, suffix_plain)
+                                            }
+                                        } else {
+                                            let head_len = max_width - 5;
+                                            format!("{}(...)", plain_name.chars().take(head_len).collect::<String>())
+                                        }
+                                    } else {
+                                        plain_name.clone()
+                                    };
+
+                                    // Construire la version colorée correspondante
+                                    let colored_name = if plain_name.chars().count() > max_width {
+                                        if let Some(pos) = name.rfind('.') {
+                                            let ext = &name[pos..];
+                                            if ext.chars().count() + 4 >= max_width {
+                                                let head_len = max_width - 5;
+                                                let head = plain_name.chars().take(head_len).collect::<String>();
+                                                format!("{}(...)", head)
+                                            } else {
+                                                let head_len = max_width - ext.chars().count() - 5;
+                                                let head = name.chars().take(head_len).collect::<String>();
+                                                format!("{}{}{}{}{}", color_start, head, color_end, "(...)", ext)
+                                            }
+                                        } else {
+                                            let head_len = max_width - 5;
+                                            let head = plain_name.chars().take(head_len).collect::<String>();
+                                            format!("{}(...)", head)
+                                        }
+                                    } else {
+                                        format!("{}{}{}{}", color_start, name, color_end, suffix_colored)
+                                    };
+
+                                    // Pad the plain display and replace with colored string to preserve column width
+                                    let padded_plain = format!("{:<width$}", display_plain, width = max_width);
+                                    let display_name = padded_plain.replacen(&display_plain, &colored_name, 1);
+
+                                    // Affichage avec colonnes ajustées (Name width = 40)
+                                    println!("{} {:>3} {:<10} {:>10} {:<12} {}",
                                         perms, links, owner, size, modified,
-                                        color_start, name, color_end);
+                                        display_name);
                                 }
                             } else {
                                 // Affichage simple avec couleurs
                                 if let Ok(metadata) = entry.metadata() {
                                     if metadata.is_dir() {
-                                        println!("\x1B[1;34m{}\x1B[0m", name);  // Bleu pour dossiers
+                                        // Nom en bleu gras, '/' en cyan
+                                        println!("\x1B[1;34m{}\x1B[0m\x1B[36m/\x1B[0m", name);
                                     } else if is_executable(&name, &metadata) {
                                         println!("\x1B[1;32m{}\x1B[0m", name);  // Vert pour exécutables
                                     } else {
