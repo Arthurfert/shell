@@ -59,8 +59,26 @@ fn main() {
         // Réinitialiser le flag
         interrupted.store(false, Ordering::SeqCst);
 
-        // Afficher le prompt
-        print!("> ");
+        // Afficher le prompt précédé du répertoire courant (abrégé ~ pour le home)
+        let cwd = env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+        let cwd_display = cwd.display().to_string();
+        let home = get_home_dir();
+        let prompt_path = if cwd_display.starts_with(&home) {
+            let tail = cwd_display.trim_start_matches(&home);
+            if tail.is_empty() || tail == "\\" || tail == "/" {
+                "~".to_string()
+            } else {
+                // garder le séparateur si présent
+                if tail.starts_with('\\') || tail.starts_with('/') {
+                    format!("~{}", tail)
+                } else {
+                    format!("~/{}", tail)
+                }
+            }
+        } else {
+            cwd_display
+        };
+        print!("{} > ", prompt_path);
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
